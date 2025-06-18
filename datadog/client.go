@@ -39,7 +39,7 @@ func NewClient() *Client {
 	}
 }
 
-func (c *Client) QueryMetrics(ctx context.Context, query string, from, to time.Time) (string, error) {
+func (c *Client) QueryMetrics(ctx context.Context, query string, from, to time.Time, unit string) (string, error) {
 	endpoint := fmt.Sprintf("%s/query", c.baseURL)
 
 	params := url.Values{}
@@ -93,11 +93,12 @@ func (c *Client) QueryMetrics(ctx context.Context, query string, from, to time.T
 	value := lastPoint[1]
 
 	summary := fmt.Sprintf(
-		"📊 Metric: %s\nQuery: %s\nTimestamp: %s\nValue: %.2f ms",
+		"📊 Metric: %s\nQuery: %s\nTimestamp: %s\nValue: %.2f %s",
 		s.DisplayName,
 		s.Expression,
 		timestamp.Format(time.RFC822),
 		value,
+		unit,
 	)
 
 	return summary, nil
