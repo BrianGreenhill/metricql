@@ -1,0 +1,27 @@
+services:
+  unicorn-api:
+    tags:
+      kube_deployment: unicorn-api
+    team: monolith-fitness
+    metrics:
+      - request.dist.time
+
+metrics:
+  request.dist.time:
+    description: Distribution of request latencies and counts
+    type: distribution
+    tags:
+      - kube_deployment
+      - status_class
+    supports:
+      latency:
+        type: distribution
+        aggregation: p99
+        unit: ms
+        example_query: p99:request.dist.time{kube_deployment:unicorn-api}
+      error_rate:
+        type: count
+        filter: status_class:5xx
+        aggregation: rate
+        unit: percent
+        example_query: rate:request.dist.time{status_class:5xx,kube_deployment:unicorn-api}
