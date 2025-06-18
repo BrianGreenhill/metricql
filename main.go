@@ -78,7 +78,7 @@ func main() {
 }
 
 func executeQuery(ctx context.Context, mq MetricQuery) {
-	from, to, err := ParseTimeRange(mq.TimeWindow)
+	from, to, err := parseTimeRange(mq.TimeWindow)
 	if err != nil {
 		fmt.Printf("Error parsing time range: %v\n", err)
 		return
@@ -107,7 +107,7 @@ func buildQueryString(mq MetricQuery) string {
 	return fmt.Sprintf("%s:%s%s", mq.Aggregation, mq.MetricName, tags)
 }
 
-func ParseTimeRange(durStr string) (time.Time, time.Time, error) {
+func parseTimeRange(durStr string) (time.Time, time.Time, error) {
 	dur, err := time.ParseDuration(durStr)
 	if err != nil {
 		return time.Time{}, time.Time{}, fmt.Errorf("invalid duration format: %w", err)

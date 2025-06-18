@@ -3,7 +3,6 @@ package mcp
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/goccy/go-yaml"
 )
@@ -54,55 +53,4 @@ func LoadMCPContext(path string) (*MCPContext, error) {
 	}
 
 	return &ctx, nil
-}
-
-func ResolveMetric(ctx *MCPContext, metricName, alias string) (*Metric, *View, error) {
-	aliasKey := strings.ToLower(alias)
-	viewKey, ok := ctx.Aliases[aliasKey]
-	if !ok {
-		return nil, nil, fmt.Errorf("alias '%s' not found", alias)
-	}
-
-	service, ok := ctx.Services[metricName]
-	if !ok {
-		return nil, nil, fmt.Errorf("service '%s' not found", metricName)
-	}
-
-	for _, metricName := range service.Metrics {
-		metric, ok := ctx.Metrics[metricName]
-		if !ok {
-			continue
-		}
-		view, ok := metric.Supports[viewKey]
-		if ok {
-			return &metric, &view, nil
-		}
-	}
-
-	return nil, nil, fmt.Errorf("view '%s' not found for metric '%s'", viewKey, metricName)
-}
-
-func ParsePrompt(ctx *MCPContext, prompt string) (string, string, error) {
-	lower := strings.ToLower(prompt)
-
-	var matchedService string
-	for serviceName := range ctx.Services {
-		if strings.Contains(lower, serviceName) {
-			matchedService = serviceName
-			break
-		}
-	}
-	if matchedService == "" {
-		return "", "", fmt.Errorf("no service found in prompt: %s", prompt)
-	}
-
-	var matchedAlias string
-	for alias := range ctx.Aliases {
-		if strings.Contains(lower, alias) {
-			matchedAlias = alias
-			break
-		}
-	}
-
-	return matchedService, matchedAlias, nil
 }

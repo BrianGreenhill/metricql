@@ -62,7 +62,11 @@ func (c *Client) QueryMetrics(ctx context.Context, query string, from, to time.T
 	if err != nil {
 		return "", fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("failed to close response body: %v\n", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
