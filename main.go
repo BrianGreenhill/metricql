@@ -13,7 +13,6 @@ import (
 
 	"github.com/briangreenhill/metricql/datadog"
 	"github.com/briangreenhill/metricql/mcp"
-	"github.com/briangreenhill/metricql/prompt"
 )
 
 type MetricQuery struct {
@@ -41,73 +40,41 @@ Do not invent fields. If you are unsure, return nulls.
 `
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: metricql <prompt> or metricql repl")
-		os.Exit(1)
+	rl, err := readline.NewEx(&readline.Config{
+		Prompt:          "metricql > ",
+		HistoryFile:     "/tmp/metricql.repl.history",
+		InterruptPrompt: "^C",
+		EOFPrompt:       "exit",
+	})
+	if err != nil {
+		panic(err)
 	}
-	if os.Args[1] == "repl" {
-		startREPL()
-		return
+	defer func() {
+		if err := rl.Close(); err != nil {
+			fmt.Printf("Failed to close readline: %v\n", err)
+		}
+	}()
+
+	fmt.Println("metricql REPL mode -- type 'help' or 'exit' to quit")
+
+	for {
+		line, err := rl.Readline()
+		if err == readline.ErrInterrupt {
+			break
+		}
+		switch line {
+		case "exit", "quit":
+			return
+		case "help", "?":
+			printHelp()
+			continue
+		case "clear":
+			clearScreen()
+			continue
+		default:
+			runPrompt(line)
+		}
 	}
-	if os.Args[1] == "llm" {
-		mcpCtx, err := mcp.LoadMCPContext("ontology.yaml")
-		if err != nil {
-			fmt.Printf("Failed to load MCP context: %v\n", err)
-			return
-		}
-
-		jsonBytes, err := mcp.BuildLLMContext(mcpCtx)
-		if err != nil {
-			fmt.Printf("Failed to build LLM context: %v\n", err)
-			return
-		}
-
-		client := openai.NewClient(os.Getenv("OPENAI_API_KEY"))
-		messages := []openai.ChatCompletionMessage{
-			{
-				Role:    openai.ChatMessageRoleSystem,
-				Content: systemPrompt + "\n\nCONTEXT:\n" + string(jsonBytes),
-			},
-			{
-				Role:    openai.ChatMessageRoleUser,
-				Content: "How is unicorn-api latency today?",
-			},
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-			Model:       openai.GPT4Dot1,
-			Messages:    messages,
-			Temperature: 0.2,
-		})
-		if err != nil {
-			fmt.Printf("Error calling OpenAI API: %v\n", err)
-			return
-		}
-		output := resp.Choices[0].Message.Content
-		// debug output to save API tokens
-		// 		output := `
-		// {
-		//         "MetricName": "request.dist.time",
-		//         "Aggregation": "p99",
-		//         "Filters": { "kube_deployment": "unicorn-api" },
-		//         "TimeWindow": "24h"
-		// }
-		// `
-		fmt.Println("LLM Response:", output)
-
-		var query MetricQuery
-		if err := json.Unmarshal([]byte(output), &query); err != nil {
-			fmt.Printf("Error parsing LLM response: %v\n", err)
-		}
-
-		executeQuery(ctx, query)
-		return
-	}
-
-	runPrompt(strings.Join(os.Args[1:], " "))
 }
 
 func executeQuery(ctx context.Context, mq MetricQuery) {
@@ -150,44 +117,6 @@ func ParseTimeRange(durStr string) (time.Time, time.Time, error) {
 	return from, to, nil
 }
 
-func startREPL() {
-	rl, err := readline.NewEx(&readline.Config{
-		Prompt:          "metricql > ",
-		HistoryFile:     "/tmp/metricql.repl.history",
-		InterruptPrompt: "^C",
-		EOFPrompt:       "exit",
-	})
-	if err != nil {
-		panic(err)
-	}
-	defer func() {
-		if err := rl.Close(); err != nil {
-			fmt.Printf("Failed to close readline: %v\n", err)
-		}
-	}()
-
-	fmt.Println("metricql REPL mode -- type 'help' or 'exit' to quit")
-
-	for {
-		line, err := rl.Readline()
-		if err == readline.ErrInterrupt {
-			break
-		}
-		switch line {
-		case "exit", "quit":
-			return
-		case "help", "?":
-			printHelp()
-			continue
-		case "clear":
-			clearScreen()
-			continue
-		default:
-			runPrompt(line)
-		}
-	}
-}
-
 func clearScreen() {
 	fmt.Print("\033[H\033[2J")
 }
@@ -215,24 +144,58 @@ Tip:
 }
 
 func runPrompt(promptText string) {
-	q := prompt.ParsePrompt(promptText)
-	fmt.Printf("📊 Generated Metric Query: %+v\n", q)
-
-	queryStr := q.ToDatadogQuery()
-	fmt.Println("🔍 Datadog Query String:", queryStr)
-
-	from := time.Now().Add(-prompt.ParseDuration(q.TimeWindow))
-	to := time.Now()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	client := datadog.NewClient()
-	res, err := client.QueryMetrics(ctx, queryStr, from, to, "ms")
+	mcpCtx, err := mcp.LoadMCPContext("ontology.yaml")
 	if err != nil {
-		fmt.Println("❌ Error querying Datadog:", err)
+		fmt.Printf("Failed to load MCP context: %v\n", err)
 		return
 	}
 
-	fmt.Println(res)
+	jsonBytes, err := mcp.BuildLLMContext(mcpCtx)
+	if err != nil {
+		fmt.Printf("Failed to build LLM context: %v\n", err)
+		return
+	}
+
+	client := openai.NewClient(os.Getenv("OPENAI_API_KEY"))
+	messages := []openai.ChatCompletionMessage{
+		{
+			Role:    openai.ChatMessageRoleSystem,
+			Content: systemPrompt + "\n\nCONTEXT:\n" + string(jsonBytes),
+		},
+		{
+			Role:    openai.ChatMessageRoleUser,
+			Content: promptText,
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+		Model:       openai.GPT4Dot1,
+		Messages:    messages,
+		Temperature: 0.2,
+	})
+	if err != nil {
+		fmt.Printf("Error calling OpenAI API: %v\n", err)
+		return
+	}
+	output := resp.Choices[0].Message.Content
+	// debug output to save API tokens
+	// 		output := `
+	// {
+	//         "MetricName": "request.dist.time",
+	//         "Aggregation": "p99",
+	//         "Filters": { "kube_deployment": "unicorn-api" },
+	//         "TimeWindow": "24h"
+	// }
+	// `
+	fmt.Println("LLM Response:", output)
+
+	var query MetricQuery
+	if err := json.Unmarshal([]byte(output), &query); err != nil {
+		fmt.Printf("Error parsing LLM response: %v\n", err)
+	}
+
+	executeQuery(ctx, query)
 }
